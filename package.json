@@ -1,0 +1,16 @@
+{
+  "name": "tavhub-auth-proxy",
+  "version": "1.0.0",
+  "description": "OAuth Proxy for TavHub",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}
