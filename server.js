@@ -1,6 +1,9 @@
 const express = require("express");
 const axios = require("axios");
+const cors = require('cors');
 const app = express();
+app.use(express.json());
+app.use(cors());
 
 app.use(express.json());
 
@@ -87,4 +90,69 @@ app.post("/fetch-markup", async (req, res) => {
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Auth proxy listening on port ${port}`);
+});
+
+// Endpoint que a Magalu irá chamar após a autorização do usuário
+app.get('/magalu/callback', async (req, res) => {
+    const { code } = req.query;
+
+    if (!code) {
+        return res.status(400).send('Erro: Código de autorização ausente.');
+    }
+
+    // Variáveis de ambiente que você precisa configurar no Render.com
+    const MAGALU_CLIENT_ID = process.env.MAGALU_CLIENT_ID;
+    const MAGALU_CLIENT_SECRET = process.env.MAGALU_CLIENT_SECRET;
+    const REDIRECT_URI = "https://tavhub-auth-proxy.onrender.com/magalu/callback";
+
+    if (!MAGALU_CLIENT_ID || !MAGALU_CLIENT_SECRET) {
+        return res.status(500).send('Erro: Credenciais do servidor não configuradas.');
+    }
+
+    try {
+        // Etapa 1: Trocar o código de autorização pelo token de acesso
+        const tokenResponse = await axios.post('https://id.magalu.com/oauth/token', new URLSearchParams({
+            grant_type: 'authorization_code',
+            code: code,
+            redirect_uri: REDIRECT_URI,
+            client_id: MAGALU_CLIENT_ID,
+            client_secret: MAGALU_CLIENT_SECRET
+        }), {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        });
+
+        const { access_token, refresh_token, expires_in, scope } = tokenResponse.data;
+
+        // Etapa 2: Buscar o ID do Vendedor (Seller ID)
+        // A API da Magalu requer uma chamada adicional para obter os dados do vendedor.
+        const sellerInfoResponse = await axios.get('https://api.magalu.com/sellers/me', {
+            headers: {
+                'Authorization': `Bearer ${access_token}`,
+                'Accept': 'application/json'
+            }
+        });
+        
+        const sellerId = sellerInfoResponse.data.seller_id; // Supondo que o campo seja 'seller_id'
+
+        // Etapa 3: Retornar todos os dados para a sua aplicação TavHub
+        // O TavHub irá receber este JSON e salvar no banco de dados.
+        res.json({
+            access_token,
+            refresh_token,
+            expires_in,
+            scope,
+            seller_id: sellerId 
+        });
+
+    } catch (error) {
+        console.error("Erro na autenticação com a Magalu:", error.response ? error.response.data : error.message);
+        res.status(500).send('Falha ao trocar o código de autorização da Magalu.');
+    }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Servidor proxy de autenticação a correr na porta ${PORT}`);
 });
