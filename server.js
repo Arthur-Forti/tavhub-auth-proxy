@@ -113,7 +113,7 @@ app.post('/magalu/exchange-token', async (req, res) => {
         return res.status(500).json({ error: 'Erro: Credenciais do servidor não configuradas.' });
     }
 
-    try {
+ try {
         const tokenResponse = await axios.post('https://id.magalu.com/oauth/token', new URLSearchParams({
             grant_type: 'authorization_code',
             code: code,
@@ -128,7 +128,7 @@ app.post('/magalu/exchange-token', async (req, res) => {
 
         const { access_token, refresh_token, expires_in, scope } = tokenResponse.data;
 
-      const sellerInfoResponse = await axios.get('https://id.magalu.com/oauth/user_info', {
+        const sellerInfoResponse = await axios.get('https://id.magalu.com/oauth/user_info', {
             headers: {
                 'Authorization': `Bearer ${access_token}`
             }
@@ -149,7 +149,17 @@ app.post('/magalu/exchange-token', async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Erro na autenticação com a Magalu:", error.response ? error.response.data : error.message);
+        console.error("--- ERRO DETALHADO NA AUTENTICAÇÃO COM A MAGALU ---");
+        if (error.response) {
+            console.error("Status do Erro:", error.response.status);
+            console.error("Dados do Erro:", JSON.stringify(error.response.data, null, 2));
+        } else if (error.request) {
+            console.error("Nenhuma resposta recebida da Magalu. Detalhes da requisição:", error.request);
+        } else {
+            console.error("Erro ao configurar a requisição:", error.message);
+        }
+        console.error("--- FIM DO ERRO DETALHADO ---");
+
         res.status(error.response?.status || 500).json({ 
             error: "Falha ao trocar o código de autorização da Magalu.",
             details: error.response?.data
