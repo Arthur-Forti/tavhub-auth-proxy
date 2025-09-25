@@ -85,6 +85,7 @@ app.post("/fetch-markup", async (req, res) => {
 
 
 // --- ROTAS DA MAGALU ---
+
 app.get('/magalu/callback', (req, res) => {
     res.send('<h1>Código recebido!</h1><p>Copie a URL completa do navegador e cole na aplicação TavHub.</p>');
 });
@@ -117,16 +118,15 @@ app.post('/magalu/exchange-token', async (req, res) => {
 
         const { access_token, refresh_token, expires_in, scope } = tokenResponse.data;
 
-        // Etapa 2: Usar o endpoint correto da API de Marketplace para obter os dados do vendedor
-        console.log("A obter o Seller ID de api.magalu.com/sellers/me...");
-        const sellerInfoResponse = await axios.get('https://api.magalu.com/sellers/me', {
+        // Etapa 2: Usar o endpoint padrão /user_info para obter o ID do vendedor
+        const sellerInfoResponse = await axios.get('https://id.magalu.com/oauth/user_info', {
             headers: {
-                'Authorization': `Bearer ${access_token}`,
-                'Accept': 'application/vnd.magalu.v1+json'
+                'Authorization': `Bearer ${access_token}`
             }
         });
         
-        const sellerId = sellerInfoResponse.data.seller_id; 
+        // O seller_id está no campo 'sub' (subject) do user_info
+        const sellerId = sellerInfoResponse.data.sub; 
 
         if (!sellerId) {
           return res.status(500).json({ error: "Não foi possível obter o Seller ID da Magalu." });
