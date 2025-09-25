@@ -128,14 +128,12 @@ app.post('/magalu/exchange-token', async (req, res) => {
 
         const { access_token, refresh_token, expires_in, scope } = tokenResponse.data;
 
-        // A documentação indica que o 'user_info' endpoint pode ser usado para obter o seller_id
-        const sellerInfoResponse = await axios.get('https://id.magalu.com/oauth/user_info', {
+      const sellerInfoResponse = await axios.get('https://id.magalu.com/oauth/user_info', {
             headers: {
                 'Authorization': `Bearer ${access_token}`
             }
         });
         
-        // O seller_id está no campo 'sub' (subject) do user_info
         const sellerId = sellerInfoResponse.data.sub; 
 
         if (!sellerId) {
