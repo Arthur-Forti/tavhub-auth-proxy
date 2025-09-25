@@ -85,24 +85,14 @@ app.post("/fetch-markup", async (req, res) => {
 
 
 // --- ROTAS DA MAGALU ---
-
-// Endpoint que a Magalu irá chamar no navegador após a autorização do usuário.
-// O único objetivo dele é receber o 'code' e redirecionar para algum lugar.
 app.get('/magalu/callback', (req, res) => {
-    const { code } = req.query;
-    if (!code) {
-        return res.status(400).send('<h1>Erro: Código de autorização ausente.</h1><p>Pode fechar esta janela.</p>');
-    }
-    // Apenas informa que o código foi recebido. O usuário irá colar a URL na aplicação.
-    res.send('<h1>Código recebido com sucesso!</h1><p>Por favor, copie a URL completa do seu navegador e cole na aplicação TavHub.</p>');
+    res.send('<h1>Código recebido!</h1><p>Copie a URL completa do navegador e cole na aplicação TavHub.</p>');
 });
 
-// Endpoint que a sua aplicação TavCommerce irá chamar para trocar o 'code' pelo 'access_token'.
 app.post('/magalu/exchange-token', async (req, res) => {
     const { code } = req.body;
-
     if (!code) {
-        return res.status(400).json({ error: 'Erro: Código de autorização ausente no corpo da requisição.' });
+        return res.status(400).json({ error: 'Código de autorização ausente.' });
     }
 
     const MAGALU_CLIENT_ID = process.env.MAGALU_CLIENT_ID;
@@ -110,32 +100,33 @@ app.post('/magalu/exchange-token', async (req, res) => {
     const REDIRECT_URI = "https://tavhub-auth-proxy.onrender.com/magalu/callback";
 
     if (!MAGALU_CLIENT_ID || !MAGALU_CLIENT_SECRET) {
-        return res.status(500).json({ error: 'Erro: Credenciais do servidor não configuradas.' });
+        return res.status(500).json({ error: 'Credenciais do servidor não configuradas.' });
     }
 
- try {
-        const tokenResponse = await axios.post('https://id.magalu.com/oauth/token', new URLSearchParams({
+    try {
+        // Etapa 1: Obter o token de acesso, enviando os dados como JSON
+        const tokenResponse = await axios.post('https://id.magalu.com/oauth/token', {
             grant_type: 'authorization_code',
             code: code,
             redirect_uri: REDIRECT_URI,
             client_id: MAGALU_CLIENT_ID,
             client_secret: MAGALU_CLIENT_SECRET
-        }), {
+        }, {
             headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
+                'Content-Type': 'application/json'
             }
         });
 
         const { access_token, refresh_token, expires_in, scope } = tokenResponse.data;
 
-        const sellerInfoResponse = await axios.get('https://api.magalu.com/sellers/me', {
+        // Etapa 2: Usar o endpoint padrão /user_info para obter o ID do vendedor
+        const sellerInfoResponse = await axios.get('https://id.magalu.com/oauth/user_info', {
             headers: {
-                'Authorization': `Bearer ${access_token}`,
-                'Accept': 'application/vnd.magalu.v1+json'
+                'Authorization': `Bearer ${access_token}`
             }
         });
         
-        const sellerId = sellerInfoResponse.data.seller_id; 
+        const sellerId = sellerInfoResponse.data.sub; 
 
         if (!sellerId) {
           return res.status(500).json({ error: "Não foi possível obter o Seller ID da Magalu." });
@@ -154,20 +145,16 @@ app.post('/magalu/exchange-token', async (req, res) => {
         if (error.response) {
             console.error("Status do Erro:", error.response.status);
             console.error("Dados do Erro:", JSON.stringify(error.response.data, null, 2));
-        } else if (error.request) {
-            console.error("Nenhuma resposta recebida da Magalu. Detalhes da requisição:", error.request);
         } else {
-            console.error("Erro ao configurar a requisição:", error.message);
+            console.error("Erro na requisição:", error.message);
         }
         console.error("--- FIM DO ERRO DETALHADO ---");
-
         res.status(error.response?.status || 500).json({ 
-            error: "Falha ao trocar o código de autorização da Magalu.",
+            error: "Falha ao comunicar com a API da Magalu.",
             details: error.response?.data
         });
     }
 });
-
 
 // --- INICIALIZAÇÃO DO SERVIDOR ---
 
