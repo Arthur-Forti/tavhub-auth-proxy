@@ -85,7 +85,6 @@ app.post("/fetch-markup", async (req, res) => {
 
 
 // --- ROTAS DA MAGALU ---
-
 app.get('/magalu/callback', (req, res) => {
     res.send('<h1>Código recebido!</h1><p>Copie a URL completa do navegador e cole na aplicação TavHub.</p>');
 });
@@ -105,16 +104,20 @@ app.post('/magalu/exchange-token', async (req, res) => {
     }
 
     try {
-        // Etapa 1: Obter o token de acesso
-        const tokenResponse = await axios.post('https://id.magalu.com/oauth/token', new URLSearchParams({
+        // --- INÍCIO DA CORREÇÃO ---
+        // Etapa 1: Obter o token de acesso, enviando os dados como JSON, conforme a documentação.
+        const tokenResponse = await axios.post('https://id.magalu.com/oauth/token', {
             grant_type: 'authorization_code',
             code: code,
             redirect_uri: REDIRECT_URI,
             client_id: MAGALU_CLIENT_ID,
             client_secret: MAGALU_CLIENT_SECRET
-        }), {
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        }, {
+            headers: {
+                'Content-Type': 'application/json' // O cabeçalho agora é JSON, como exigido.
+            }
         });
+        // --- FIM DA CORREÇÃO ---
 
         const { access_token, refresh_token, expires_in, scope } = tokenResponse.data;
 
@@ -155,6 +158,7 @@ app.post('/magalu/exchange-token', async (req, res) => {
         });
     }
 });
+
 
 // --- INICIALIZAÇÃO DO SERVIDOR ---
 
