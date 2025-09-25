@@ -104,29 +104,29 @@ app.post('/magalu/exchange-token', async (req, res) => {
     }
 
     try {
-        // Etapa 1: Obter o token de acesso, enviando os dados como JSON
-        const tokenResponse = await axios.post('https://id.magalu.com/oauth/token', {
+        // Etapa 1: Obter o token de acesso
+        const tokenResponse = await axios.post('https://id.magalu.com/oauth/token', new URLSearchParams({
             grant_type: 'authorization_code',
             code: code,
             redirect_uri: REDIRECT_URI,
             client_id: MAGALU_CLIENT_ID,
             client_secret: MAGALU_CLIENT_SECRET
-        }, {
-            headers: {
-                'Content-Type': 'application/json'
-            }
+        }), {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
 
         const { access_token, refresh_token, expires_in, scope } = tokenResponse.data;
 
-        // Etapa 2: Usar o endpoint padrão /user_info para obter o ID do vendedor
-        const sellerInfoResponse = await axios.get('https://id.magalu.com/oauth/user_info', {
+        // Etapa 2: Usar o endpoint correto da API de Marketplace para obter os dados do vendedor
+        console.log("A obter o Seller ID de api.magalu.com/sellers/me...");
+        const sellerInfoResponse = await axios.get('https://api.magalu.com/sellers/me', {
             headers: {
-                'Authorization': `Bearer ${access_token}`
+                'Authorization': `Bearer ${access_token}`,
+                'Accept': 'application/vnd.magalu.v1+json'
             }
         });
         
-        const sellerId = sellerInfoResponse.data.sub; 
+        const sellerId = sellerInfoResponse.data.seller_id; 
 
         if (!sellerId) {
           return res.status(500).json({ error: "Não foi possível obter o Seller ID da Magalu." });
