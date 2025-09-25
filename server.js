@@ -128,13 +128,14 @@ app.post('/magalu/exchange-token', async (req, res) => {
 
         const { access_token, refresh_token, expires_in, scope } = tokenResponse.data;
 
-        const sellerInfoResponse = await axios.get('https://id.magalu.com/oauth/user_info', {
+        const sellerInfoResponse = await axios.get('https://api.magalu.com/sellers/me', {
             headers: {
-                'Authorization': `Bearer ${access_token}`
+                'Authorization': `Bearer ${access_token}`,
+                'Accept': 'application/vnd.magalu.v1+json'
             }
         });
         
-        const sellerId = sellerInfoResponse.data.sub; 
+        const sellerId = sellerInfoResponse.data.seller_id; 
 
         if (!sellerId) {
           return res.status(500).json({ error: "Não foi possível obter o Seller ID da Magalu." });
