@@ -2,10 +2,12 @@ const express = require("express");
 const axios = require("axios");
 const cors = require('cors');
 const app = express();
-app.use(express.json());
-app.use(cors());
 
+// Middlewares para aceitar CORS e JSON no corpo das requisições
+app.use(cors());
 app.use(express.json());
+
+// --- ROTAS DO MERCADO LIVRE ---
 
 app.post("/exchange-token", async (req, res) => {
   const { code, redirect_uri, code_verifier } = req.body;
@@ -34,7 +36,6 @@ app.post("/exchange-token", async (req, res) => {
   }
 });
 
-// --- NOVO ENDPOINT PARA BUSCAR DADOS PÚBLICOS ---
 app.post("/fetch-markup", async (req, res) => {
   const { url } = req.body;
   if (!url) {
@@ -42,21 +43,18 @@ app.post("/fetch-markup", async (req, res) => {
   }
 
   try {
-    // 1. Extrai o ID do item da URL
     const itemMatch = /(MLB-?\d+)/.exec(url);
     if (!itemMatch) {
       return res.status(400).json({ error: "Invalid MLB ID found in URL" });
     }
     const itemId = itemMatch[0].replace("-", "");
 
-    // 2. Busca os dados do item
     const itemResponse = await axios.get(`https://api.mercadolibre.com/items/${itemId}`);
     const itemData = itemResponse.data;
 
     let price = itemData.price;
     let sellerId = itemData.seller_id;
     
-    // 3. Lógica de fallback (catálogo ou variações)
     if (!price && itemData.catalog_product_id) {
         const productResponse = await axios.get(`https://api.mercadolibre.com/products/${itemData.catalog_product_id}`);
         price = productResponse.data?.buy_box_winner?.price;
@@ -70,10 +68,8 @@ app.post("/fetch-markup", async (req, res) => {
         return res.status(404).json({ error: "Price or Seller could not be determined." });
     }
 
-    // 4. Busca os dados do vendedor
     const sellerResponse = await axios.get(`https://api.mercadolibre.com/users/${sellerId}`);
     
-    // 5. Retorna o resultado
     res.status(200).json({
       sellerName: sellerResponse.data.nickname,
       price: price
@@ -87,30 +83,37 @@ app.post("/fetch-markup", async (req, res) => {
   }
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Auth proxy listening on port ${port}`);
+
+// --- ROTAS DA MAGALU ---
+
+// Endpoint que a Magalu irá chamar no navegador após a autorização do usuário.
+// O único objetivo dele é receber o 'code' e redirecionar para algum lugar.
+app.get('/magalu/callback', (req, res) => {
+    const { code } = req.query;
+    if (!code) {
+        return res.status(400).send('<h1>Erro: Código de autorização ausente.</h1><p>Pode fechar esta janela.</p>');
+    }
+    // Apenas informa que o código foi recebido. O usuário irá colar a URL na aplicação.
+    res.send('<h1>Código recebido com sucesso!</h1><p>Por favor, copie a URL completa do seu navegador e cole na aplicação TavHub.</p>');
 });
 
-// Endpoint que a Magalu irá chamar após a autorização do usuário
-app.get('/magalu/callback', async (req, res) => {
-    const { code } = req.query;
+// Endpoint que a sua aplicação TavCommerce irá chamar para trocar o 'code' pelo 'access_token'.
+app.post('/magalu/exchange-token', async (req, res) => {
+    const { code } = req.body;
 
     if (!code) {
-        return res.status(400).send('Erro: Código de autorização ausente.');
+        return res.status(400).json({ error: 'Erro: Código de autorização ausente no corpo da requisição.' });
     }
 
-    // Variáveis de ambiente que você precisa configurar no Render.com
     const MAGALU_CLIENT_ID = process.env.MAGALU_CLIENT_ID;
     const MAGALU_CLIENT_SECRET = process.env.MAGALU_CLIENT_SECRET;
     const REDIRECT_URI = "https://tavhub-auth-proxy.onrender.com/magalu/callback";
 
     if (!MAGALU_CLIENT_ID || !MAGALU_CLIENT_SECRET) {
-        return res.status(500).send('Erro: Credenciais do servidor não configuradas.');
+        return res.status(500).json({ error: 'Erro: Credenciais do servidor não configuradas.' });
     }
 
     try {
-        // Etapa 1: Trocar o código de autorização pelo token de acesso
         const tokenResponse = await axios.post('https://id.magalu.com/oauth/token', new URLSearchParams({
             grant_type: 'authorization_code',
             code: code,
@@ -125,19 +128,20 @@ app.get('/magalu/callback', async (req, res) => {
 
         const { access_token, refresh_token, expires_in, scope } = tokenResponse.data;
 
-        // Etapa 2: Buscar o ID do Vendedor (Seller ID)
-        // A API da Magalu requer uma chamada adicional para obter os dados do vendedor.
-        const sellerInfoResponse = await axios.get('https://api.magalu.com/sellers/me', {
+        // A documentação indica que o 'user_info' endpoint pode ser usado para obter o seller_id
+        const sellerInfoResponse = await axios.get('https://id.magalu.com/oauth/user_info', {
             headers: {
-                'Authorization': `Bearer ${access_token}`,
-                'Accept': 'application/json'
+                'Authorization': `Bearer ${access_token}`
             }
         });
         
-        const sellerId = sellerInfoResponse.data.seller_id; // Supondo que o campo seja 'seller_id'
+        // O seller_id está no campo 'sub' (subject) do user_info
+        const sellerId = sellerInfoResponse.data.sub; 
 
-        // Etapa 3: Retornar todos os dados para a sua aplicação TavHub
-        // O TavHub irá receber este JSON e salvar no banco de dados.
+        if (!sellerId) {
+          return res.status(500).json({ error: "Não foi possível obter o Seller ID da Magalu." });
+        }
+
         res.json({
             access_token,
             refresh_token,
@@ -148,11 +152,17 @@ app.get('/magalu/callback', async (req, res) => {
 
     } catch (error) {
         console.error("Erro na autenticação com a Magalu:", error.response ? error.response.data : error.message);
-        res.status(500).send('Falha ao trocar o código de autorização da Magalu.');
+        res.status(error.response?.status || 500).json({ 
+            error: "Falha ao trocar o código de autorização da Magalu.",
+            details: error.response?.data
+        });
     }
 });
 
-const PORT = process.env.PORT || 3000;
+
+// --- INICIALIZAÇÃO DO SERVIDOR ---
+
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
     console.log(`Servidor proxy de autenticação a correr na porta ${PORT}`);
 });
