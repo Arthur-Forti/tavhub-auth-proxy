@@ -159,53 +159,61 @@ app.post('/magalu/exchange-token', async (req, res) => {
 
 // --- ROTAS DA SHOPEE ---
 
-// Rota de callback que apenas exibe uma mensagem no navegador do usuário
 app.get('/shopee/callback', (req, res) => {
-    res.send('<h1>Código recebido!</h1><p>Pode fechar esta janela. Copie a URL completa do navegador e cole na aplicação TavHub.</p>');
+    res.send('<h1>Código recebido!</h1><p>Copie a URL completa do navegador e cole na aplicação TavHub.</p>');
 });
 
-// Rota principal que troca o código de autorização pelo token de acesso
-app.post('/shopee/exchange-token', async (req, res) => {
+app.post("/shopee/exchange-token", async (req, res) => {
     const { code } = req.body;
     if (!code) {
-        return res.status(400).json({ error: 'Código de autorização da Shopee ausente.' });
+        return res.status(400).json({ error: "Código de autorização ausente." });
     }
 
-    const SHOPEE_PARTNER_ID = parseInt(process.env.SHOPEE_PARTNER_ID, 10);
-    const SHOPEE_PARTNER_KEY = process.env.SHOPEE_PARTNER_KEY;
-    const API_PATH = "/api/v2/auth/token/get";
+    const partnerId = process.env.SHOPEE_PARTNER_ID;
+    const partnerKey = process.env.SHOPEE_PARTNER_KEY;
+    const isTest = process.env.SHOPEE_IS_TEST_APP === 'true';
 
-    if (!SHOPEE_PARTNER_ID || !SHOPEE_PARTNER_KEY) {
-        return res.status(500).json({ error: 'Credenciais do servidor Shopee não configuradas.' });
+    if (!partnerId || !partnerKey) {
+        return res.status(500).json({ error: "Credenciais do servidor Shopee não configuradas." });
     }
-    
+
     try {
         const timestamp = Math.floor(Date.now() / 1000);
-        const baseString = `${SHOPEE_PARTNER_ID}${API_PATH}${timestamp}`;
-        const sign = crypto.createHmac('sha256', SHOPEE_PARTNER_KEY).update(baseString).digest('hex');
+        const path = "/api/v2/auth/token/get";
+        const baseString = `${partnerId}${path}${timestamp}`;
         
-        const apiUrl = `https://partner.shopeemobile.com${API_PATH}?partner_id=${SHOPEE_PARTNER_ID}&timestamp=${timestamp}&sign=${sign}`;
-
-        const shopeeResponse = await axios.post(apiUrl, {
+        const sign = crypto
+            .createHmac("sha256", partnerKey)
+            .update(baseString)
+            .digest("hex");
+        
+        const requestBody = {
             code: code,
-            partner_id: SHOPEE_PARTNER_ID,
-        }, {
-            headers: { 'Content-Type': 'application/json' }
-        });
+            partner_id: parseInt(partnerId),
+            shop_id: 0 // Para a primeira autorização, o shop_id não é conhecido, então 0 é usado.
+        };
 
-        const { access_token, refresh_token, expire_in, shop_id_list } = shopeeResponse.data;
+        // --- Escolhe a URL com base na variável de ambiente ---
+        const shopeeApiBaseUrl = isTest 
+            ? "https://partner.test-stable.shopeemobile.com" 
+            : "https://partner.shopeemobile.com";
 
+        const response = await axios.post(
+            `${shopeeApiBaseUrl}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${sign}`,
+            requestBody,
+            { headers: { "Content-Type": "application/json" } }
+        );
+        
+        // --- Extrai o shop_id da resposta ---
+        const { access_token, refresh_token, expire_in, shop_id_list } = response.data;
         if (!shop_id_list || shop_id_list.length === 0) {
-            return res.status(500).json({ error: "Nenhuma loja (shop_id) encontrada na resposta da Shopee." });
+            return res.status(500).json({ error: "A resposta da Shopee não incluiu um Shop ID." });
         }
         
-        // Retorna os dados necessários para o TavCommerce
-        res.json({
-            access_token,
-            refresh_token,
-            expire_in,
-            shop_id: shop_id_list[0] // O shop_id é o nosso "seller_id"
-        });
+        // Retorna o primeiro shop_id da lista, que é o da loja que autorizou.
+        const shop_id = shop_id_list[0];
+
+        res.status(200).json({ access_token, refresh_token, expire_in, shop_id });
 
     } catch (error) {
         console.error("--- ERRO DETALHADO NA AUTENTICAÇÃO COM A SHOPEE ---");
@@ -216,9 +224,9 @@ app.post('/shopee/exchange-token', async (req, res) => {
             console.error("Erro na requisição:", error.message);
         }
         console.error("--- FIM DO ERRO DETALHADO ---");
-        res.status(error.response?.status || 500).json({ 
-            error: "Falha ao comunicar com a API da Shopee.",
-            details: error.response?.data
+        res.status(error.response?.status || 500).json({
+            error: "Falha ao comunicar com a API da Shopee via proxy.",
+            details: error.response?.data,
         });
     }
 });
